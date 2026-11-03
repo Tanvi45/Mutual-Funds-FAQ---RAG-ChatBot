@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.streamlit/
+data/
+.idea/
+.vscode/
+*.egg-info/
+dist/
+build/
+# Local Chroma database and backups
+chroma/
+chroma-backup-*/

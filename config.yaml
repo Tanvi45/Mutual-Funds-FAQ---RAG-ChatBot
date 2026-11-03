@@ -1,0 +1,54 @@
+sources:
+  - doc_id: hdfc-amc
+    url: https://groww.in/mutual-funds/amc/hdfc-mutual-funds
+    scheme_name: HDFC Mutual Fund
+    doc_type: amc
+  - doc_id: hdfc-large-cap-direct-growth
+    url: https://groww.in/mutual-funds/hdfc-large-cap-fund-direct-growth
+    scheme_name: HDFC Large Cap Fund Direct Growth
+    doc_type: scheme
+  - doc_id: hdfc-flexi-cap-direct-growth
+    url: https://groww.in/mutual-funds/hdfc-equity-fund-direct-growth
+    scheme_name: HDFC Flexi Cap Direct Plan Growth
+    doc_type: scheme
+  - doc_id: hdfc-elss-tax-saver-direct-growth
+    url: https://groww.in/mutual-funds/hdfc-elss-tax-saver-fund-direct-plan-growth
+    scheme_name: HDFC ELSS Tax Saver Fund Direct Plan Growth
+    doc_type: scheme
+  - doc_id: hdfc-mid-cap-direct-growth
+    url: https://groww.in/mutual-funds/hdfc-mid-cap-fund-direct-growth
+    scheme_name: HDFC Mid Cap Fund Direct Growth
+    doc_type: scheme
+
+chunking:
+  strategy: hybrid
+  section_tokens: 512
+  overlap_ratio: 0.12
+
+embedding:
+  model: sentence-transformers/all-MiniLM-L6-v2
+
+chroma:
+  path: data/chroma
+  collection: mf_faq
+  distance: cosine
+
+retrieval:
+  top_k: 4
+  score_threshold: 0.25
+
+generation:
+  provider: groq
+  max_sentences: 3
+
+paths:
+  stages: data/stages
+
+safety:
+  educational_url: https://www.amfiindia.com/investor-corner/knowledge-center
+  pii_patterns:
+    - '[A-Z]{5}[0-9]{4}[A-Z]'
+    - '\b\d{12}\b'
+    - '\b\d{10}\b'
+    - '[\w.+-]+@[\w-]+\.[\w.-]+'
+    - '\bOTP\b'
