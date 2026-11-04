@@ -2,6 +2,7 @@ import streamlit as st
 import re
 from generator import GenerationError, generate_answer, source_records
 from retriever import Retriever
+from vector_store import VectorStore
 
 # Page config
 st.set_page_config(page_title="Groww HDFC MF FAQ Assistant", page_icon="📊")
@@ -74,7 +75,12 @@ EXAMPLE_QUESTIONS = [
 
 # Load components
 @st.cache_resource
-def load_components():
+def load_components(): 
+    store = VectorStore()
+    if store.collection.count() == 0:
+        store.index_documents("data/embeddings/embeddings.json")
+
+
     retriever = Retriever()
     return retriever
 

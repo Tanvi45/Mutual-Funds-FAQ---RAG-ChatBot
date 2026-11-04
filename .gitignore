@@ -5,7 +5,11 @@ __pycache__/
 *.pyc
 *.pyo
 .streamlit/
-data/
+data/*
+!data/chunks/
+!data/chunks/chunks.json
+!data/embeddings/
+!data/embeddings/embeddings.json
 .idea/
 .vscode/
 *.egg-info/
