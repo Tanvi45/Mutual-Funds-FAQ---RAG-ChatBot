@@ -1,77 +1,344 @@
 import streamlit as st
 import re
+import base64
+import textwrap
 from generator import GenerationError, generate_answer, source_records
 from retriever import Retriever
 from vector_store import VectorStore
 
 # Page config
-st.set_page_config(page_title="Groww HDFC MF FAQ Assistant", page_icon="📊")
+st.set_page_config(
+    page_title="FAQ Assistant",
+    page_icon=":material/account_balance:",
+    initial_sidebar_state="expanded"
+)
+
+
 # Custom UI styling
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+    :root {
+        --forest: #064B36;
+        --forest-dark: #033D2C;
+        --forest-light: #126447;
+        --mint: #EAF7F0;
+        --mint-light: #F7FCF9;
+        --text-dark: #17251F;
+        --text-muted: #718078;
+        --border: #DCEAE1;
+    }
+
+    /* Global application */
+    html, body, [class*="css"] {
+        font-family: 'Manrope', sans-serif;
+    }
+
     .stApp {
-        background-color: #F7F9F6;
-        color: #1F3328;
+        background: #F7FCF9;
+        color: var(--text-dark);
+    }
+
+    /* Full-width dashboard workspace */
+    [data-testid="stMain"] {
+        background:
+            radial-gradient(ellipse at 85% 10%, rgba(191, 229, 205, 0.23), transparent 38%),
+            radial-gradient(ellipse at 50% 100%, rgba(207, 237, 217, 0.25), transparent 45%),
+            linear-gradient(135deg, #F7FCF9 0%, #FFFFFF 52%, #F1F9F4 100%);
+        position: relative;
+        isolation: isolate;
+    }
+
+    /* Subtle silver rupee motifs across the workspace */
+    [data-testid="stMain"]::before {
+        content: "₹";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: -1;
+        opacity: 0.035;
+        color: #718A7B;
+        font-size: 170px;
+        font-weight: 800;
+        background-image:
+            radial-gradient(circle at 15% 18%, transparent 0 1px, transparent 2px),
+            radial-gradient(circle at 75% 35%, transparent 0 1px, transparent 2px);
     }
 
     .block-container {
-        max-width: 1200px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        max-width: 100%;
+        padding: 3rem 3.2rem 3rem 3.2rem;
     }
 
-    h1, h2, h3 {
-        color: #183D2B;
+    /* Main workspace typography */
+    [data-testid="stMain"] h1,
+    [data-testid="stMain"] h2,
+    [data-testid="stMain"] h3,
+    [data-testid="stMain"] h4 {
+        color: #17251F;
+        font-family: 'Manrope', sans-serif;
+        font-weight: 700;
     }
 
-    div[data-testid="stButton"] > button {
-        border-radius: 14px;
-        border: 1px solid #D7E5D9;
-        background-color: #FFFFFF;
-        color: #244B34;
-        padding: 0.7rem 1rem;
+    [data-testid="stMain"] p,
+    [data-testid="stMain"] label,
+    [data-testid="stMain"] li {
+        color: #252D29;
+        font-family: 'Manrope', sans-serif;
     }
 
-    div[data-testid="stButton"] > button:hover {
-        border-color: #5B946B;
-        background-color: #EEF6EF;
-        color: #183D2B;
+    /* Premium forest-green sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #064B36 0%, #03432F 55%, #023B2B 100%) !important;
+        border-right: 1px solid rgba(255,255,255,0.09);
+        min-width: 250px !important;
+        max-width: 250px !important;
+        width: 250px !important;
     }
 
-div[data-testid="stTextInput"] input {
-    border-radius: 14px;
-    border: 1px solid #D7E5D9;
-    background-color: #FFFFFF;
-    color: #1F3328 !important;
-    -webkit-text-fill-color: #1F3328 !important;
-    caret-color: #1F3328;
-}
+    /* Keep the sidebar at a compact fixed width and hide its collapse controls. */
+    [data-testid="stSidebar"] > div:first-child {
+        width: 250px !important;
+    }
 
-div[data-testid="stTextInput"] input::placeholder {
-    color: #718078 !important;
-    opacity: 1;
-}
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebar"] button[kind="header"] {
+        display: none !important;
+    }
 
-    div[data-testid="stAlert"] {
+    [data-testid="stSidebar"] * {
+        color: #F4F8F5;
+        font-family: 'Manrope', sans-serif;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: #DCEBE2;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: #BFD6C8;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        background: rgba(255,255,255,0.055);
+        border: 1px solid rgba(210,238,220,0.2);
+        border-radius: 12px;
+        margin-bottom: 12px;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        color: #FFFFFF !important;
+    }
+
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(220,240,228,0.25);
+    }
+
+    /* Inputs */
+    [data-testid="stTextInput"] input,
+    [data-testid="stChatInput"] textarea {
+        background: #FFFFFF !important;
+        color: #20372A !important;
+        border: 1px solid #DCE7DE !important;
+        border-radius: 14px !important;
+        font-family: 'Manrope', sans-serif !important;
+    }
+
+    [data-testid="stTextInput"] input:focus,
+    [data-testid="stChatInput"] textarea:focus {
+        border-color: #4D9870 !important;
+        box-shadow: 0 0 0 2px rgba(77,152,112,0.12) !important;
+    }
+
+    /* Chat and response surfaces */
+    [data-testid="stChatMessage"] {
+        background: rgba(255,255,255,0.88);
+        border: 1px solid #E2ECE5;
+        border-radius: 16px;
+        padding: 1rem;
+        box-shadow: 0 4px 18px rgba(23,65,42,0.035);
+    }
+
+    [data-testid="stAlert"] {
         border-radius: 12px;
     }
-/* Make Streamlit warning and info message text readable */
-div[data-testid="stAlert"] p {
-    color: #222222 !important;
-    -webkit-text-fill-color: #222222 !important;
-}
+
+    div[data-testid="stAlert"] p {
+        color: #20372A !important;
+    }
+
+    /* Hero and section styling */
+    .hero-card {
+        background: linear-gradient(135deg, #F0FAF3, #FFFFFF);
+        padding: 1.8rem;
+        border: 1px solid #E0EEE4;
+        border-radius: 22px;
+        color: #17251F;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 8px 28px rgba(24,79,49,0.045);
+    }
+
+    .hero-card h1 {
+        color: #064B36 !important;
+        font-size: 2.25rem;
+        line-height: 1.25;
+        letter-spacing: -0.045em;
+    }
+
+    .hero-card p {
+        color: #596B60;
+        font-size: 0.98rem;
+        margin-bottom: 0;
+    }
+
+    .section-label {
+        color: #61796A;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+    }
+
+    /* Fund card and panel styling */
+    .fund-card {
+        background: #FFFFFF;
+        border: 1px solid #DCEAE1;
+        border-radius: 16px;
+        padding: 1rem;
+        box-shadow: 0 4px 16px rgba(20,75,43,0.035);
+    }
+
+    /* Welcome-page fund selection buttons: remove dark/black card styling */
+    .st-key-fund_button_0 [data-testid="stButton"] button,
+    .st-key-fund_button_1 [data-testid="stButton"] button,
+    .st-key-fund_button_2 [data-testid="stButton"] button {
+        background: #FFFFFF !important;
+        color: #064B36 !important;
+        border: 1px solid #B8D8C5 !important;
+        border-radius: 16px !important;
+        min-height: 76px;
+        height: auto;
+        white-space: normal;
+        font-family: 'Manrope', sans-serif !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(20,75,43,0.06) !important;
+    }
+
+    .st-key-fund_button_0 [data-testid="stButton"] button:hover,
+    .st-key-fund_button_1 [data-testid="stButton"] button:hover,
+    .st-key-fund_button_2 [data-testid="stButton"] button:hover {
+        background: #E8F5EF !important;
+        color: #064B36 !important;
+        border-color: #78B796 !important;
+    }
+
+    .st-key-fund_button_0 [data-testid="stButton"] button[kind="primary"],
+    .st-key-fund_button_1 [data-testid="stButton"] button[kind="primary"],
+    .st-key-fund_button_2 [data-testid="stButton"] button[kind="primary"] {
+        background: #0B6848 !important;
+        color: #FFFFFF !important;
+        border-color: #0B6848 !important;
+    }
+
+    .st-key-fund_button_0 [data-testid="stButton"] button[kind="primary"]:hover,
+    .st-key-fund_button_1 [data-testid="stButton"] button[kind="primary"]:hover,
+    .st-key-fund_button_2 [data-testid="stButton"] button[kind="primary"]:hover {
+        background: #064B36 !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Smooth transitions */
+    [data-testid="stExpander"],
+    [data-testid="stAlert"] {
+        border-radius: 14px;
+    }
+
+    /* Responsive layout */
+    @media (max-width: 900px) {
+        .block-container {
+            padding: 1.4rem 1.2rem 2rem 1.2rem;
+        }
+
+        .hero-card h1 {
+            font-size: 1.8rem;
+        }
+    }
+
+    .st-key-related_questions_panel {
+        background: #E8F5EF;
+        border: 1px solid #CFE5D8;
+        border-radius: 22px;
+        padding: 18px 20px;
+    }
+
+    .st-key-related_questions_panel [data-testid="stMarkdownContainer"] p {
+        color: #00543C;
+        font-weight: 700;
+        font-size: 1.15rem;
+    }
+
+    .st-key-related_questions_panel [data-testid="stButton"] button {
+        background: #FFFFFF;
+        color: #263B52;
+        border: 1px solid #B5D9C8;
+        border-radius: 16px;
+        min-height: 82px;
+        white-space: normal;
+        font-size: 0.9rem;
+    }
+
+    /* How we got this answer panel */
+    .st-key-how_answer_panel [data-testid="stExpander"] {
+        background: #DCEFE4;
+        border: 1px solid #9FCBB2;
+        border-radius: 14px;
+    }
+
+    .st-key-how_answer_panel [data-testid="stExpander"] summary {
+        color: #064B36 !important;
+        font-weight: 700;
+    }
+
+    .st-key-how_answer_panel [data-testid="stMarkdownContainer"] {
+        color: #263B32;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
 
 # Disclaimer
 DISCLAIMER = "Facts-only. No investment advice."
 
-# Example questions
-EXAMPLE_QUESTIONS = [
-    "What is the expense ratio of HDFC Large Cap Fund Direct Growth?",
-    "What is the ELSS lock-in period for HDFC ELSS Tax Saver Fund?",
-    "What is the minimum SIP for HDFC Mid Cap Fund Direct Growth?"
-]
+# Fund selection and question configuration
+FUND_OPTIONS = {
+    "HDFC Large Cap Fund": {
+        "main_question": "What is the expense ratio of HDFC Large Cap Fund Direct Growth?",
+        "related_questions": [
+            "Who is the fund manager of HDFC Large Cap Fund?",
+            "What risk level is shown for HDFC Large Cap Fund?",
+            "What is the investment objective of HDFC Large Cap Fund?"
+        ]
+    },
+    "HDFC ELSS Tax Saver Fund": {
+        "main_question": "What is the ELSS lock-in period for HDFC ELSS Tax Saver Fund?",
+        "related_questions": [
+            "Who is the fund manager of HDFC ELSS Tax Saver Fund?",
+            "What risk level is shown for HDFC ELSS Tax Saver Fund?",
+            "What is the investment objective of HDFC ELSS Tax Saver Fund?"
+        ]
+    },
+    "HDFC Mid Cap Fund": {
+        "main_question": "What is the minimum SIP for HDFC Mid Cap Fund Direct Growth?",
+        "related_questions": [
+            "Who is the fund manager of HDFC Mid Cap Fund?",
+            "What risk level is shown for HDFC Mid Cap Fund?",
+            "What is the investment objective of HDFC Mid Cap Fund?"
+        ]
+    }
+}
 
 # Load components
 @st.cache_resource
@@ -91,11 +358,18 @@ def main():
         st.session_state["query_input"] = question
         st.session_state["run_related_query"] = True
 
-    # Three-panel layout
-    left, center, right = st.columns([1, 2.2, 1])
+    
+    # Professional sidebar and main layout
 
-    with left:
-        with st.expander("ℹ️ About this project", expanded=True):
+    center = st.container()
+
+    with st.sidebar:
+        st.markdown("## FAQ Assistant")
+        st.caption("Your mutual fund facts companion")
+
+        st.divider()
+
+        with st.expander(":material/info: About this project", expanded=False):
             st.markdown("""
             HDFC Mutual Fund FAQ Chatbot helps users find factual information
             about HDFC Mutual Fund schemes.
@@ -104,62 +378,144 @@ def main():
             sources and generate answers grounded in retrieved information.
 
             This is an independent project, not affiliated with HDFC Mutual Fund
-            or Groww. It does not provide personalized investment advice.
+            or Groww.
             """)
 
-    with center:
-        st.markdown(
-            "<h1 style='text-align:center;'>🌱 HDFC Mutual Fund FAQ</h1>",
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            "<p style='text-align:center;color:#617367;'>"
-            "Your friendly assistant for fund facts</p>",
-            unsafe_allow_html=True
-        )
+        with st.expander(":material/account_tree: How It Works", expanded=False):
+            st.markdown("""
+            **1. Understand the Query**
+
+            The system processes your question to identify the information required.
+
+            **2. Retrieve Relevant Information**
+
+            It searches the indexed knowledge base and retrieves relevant information from available sources.
+
+            **3. Generate a Factual Response**
+
+            The AI generates an answer grounded in the retrieved information, with supporting source references.
+            """)
+
+        st.divider()
+
+        st.markdown("### :material/shield: Disclaimer")
         st.caption(DISCLAIMER)
+        st.caption("This assistant does not provide personalized investment advice.")
 
-        st.markdown("### 💬 What would you like to know?")
 
-        for i, q in enumerate(EXAMPLE_QUESTIONS):
-            st.button(
-               q, 
-               key=f"starter_{i}",
-               use_container_width=True,
-               on_click=queue_related_question,
-               args=(q,)
+    with center:
+        with open("Heading-small-logo.png", "rb") as logo_file:
+            logo_base64 = base64.b64encode(logo_file.read()).decode("utf-8")
+        st.markdown(
+            f"""
+            <div style="
+                display:inline-flex;
+                align-items:center;
+                gap:10px;
+                background:#E8F5EF;
+                border:1px solid #D5EADF;
+                border-radius:24px;
+                padding:8px 16px;
+                margin-bottom:22px;
+                color:#00543C;
+                font-family:'Manrope', sans-serif;
+                font-size:19px;
+                font-weight:700;
+                width:fit-content;">
+                <img src="data:image/png;base64,{logo_base64}"
+                     style="width:27px;height:27px;object-fit:contain;">
+                <span>FAQ Assistant</span>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-    with right:
-        st.markdown("""
-        <div style="background:#FFFFFF;border:1px solid #E1EAE2;
-                    border-radius:16px;padding:16px;">
-            <h4>🔎 How RAG works</h4>
-            <p>💬 Ask a question</p>
-            <p>↓</p>
-            <p>📚 Retrieve relevant sources</p>
-            <p>↓</p>
-            <p>✨ Generate a factual answer</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with center: 
+
+        with st.container():
+
+            st.markdown(
+                """
+
+
+                <h1 style="
+                    color:#064B36;
+                    font-size:3.35rem;
+                    font-weight:800;
+                    line-height:1.22;
+                    letter-spacing:-1.3px;
+                    margin:0 0 15px 0;">
+                    Your Mutual Fund Query<br>
+                    <span style="color:#17251F;">Simplified.</span>
+                </h1>
+
+                <p style="
+                    color:#718078;
+                    font-size:1rem;
+                    font-weight:500;
+                    line-height:1.7;
+                    margin-bottom:14px;">
+                    Get accurate, factual information about
+                    Mutual Fund schemes.
+                </p>
+
+                <div style="
+                    width:54px;
+                    height:4px;
+                    background:#16845A;
+                    border-radius:5px;
+                    margin-bottom:18px;">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    with center:
+        # Fund selection
+        def select_fund(fund_name):
+            st.session_state["selected_fund"] = fund_name
+            st.session_state["query_input"] = FUND_OPTIONS[fund_name]["main_question"]
+            st.session_state["run_related_query"] = True
+
+        if "selected_fund" not in st.session_state:
+            st.session_state["selected_fund"] = None
+
+        fund_cols = st.columns(3)
+
+        for i, fund_name in enumerate(FUND_OPTIONS):
+            with fund_cols[i]:
+                st.button(
+                    fund_name,
+                    key=f"fund_button_{i}",
+                    type="primary" if st.session_state["selected_fund"] == fund_name else "secondary",
+                    use_container_width=True,
+                    on_click=select_fund,
+                    args=(fund_name,)
+                )
+
         # Query input
-
-
         if "query_input" not in st.session_state:
             st.session_state["query_input"] = st.session_state.get("query", "")
 
-        query = st.text_input(
-            "Ask a factual question about HDFC Mutual Fund schemes:",
-            key="query_input"
-        )
+        input_col, send_col = st.columns([6, 1], vertical_alignment="bottom")
 
-        ask_clicked = st.button("Ask", type="primary")
+        with input_col:
+            query = st.text_input(
+                "Ask your question",
+                key="query_input",
+                placeholder="Ask anything about HDFC Mutual Fund...",
+                label_visibility="collapsed"
+            )
+
+        with send_col:
+            ask_clicked = st.button(
+                ":material/send:",
+                type="primary",
+                use_container_width=True
+            )
+
         run_related_query = st.session_state.pop("run_related_query", False)
 
         if ask_clicked or run_related_query:
-             
             if not query.strip():
                 st.warning("Please enter a question.")
                 return
@@ -262,85 +618,123 @@ def main():
             
 
             if sources:
-                st.markdown("#### 📚 Sources")
+                primary_source = sources[0]
 
-                for source in sources:
-                    st.markdown(
+                st.html(
+                    textwrap.dedent(
                         f"""
                         <div style="
-                            background:#FFFFFF;
-                            border:1px solid #E1EAE2;
-                            border-radius:12px;
-                            padding:12px 16px;
-                            margin-bottom:8px;">
-                            <span style="color:#617367;font-size:0.85rem;">
-                                {source['label']}
-                            </span><br>
-                            <a href="{source['url']}" target="_blank"
-                               style="color:#245B38;font-weight:600;text-decoration:none;">
-                                🔗 {source['name']} ↗
-                            </a>
+                            display:flex;
+                            align-items:center;
+                            gap:14px;
+                            margin:8px 0 12px;
+                            color:#263B32;
+                            font-family:'Manrope', sans-serif;">
+
+                            <strong>Source:</strong>
+
+                            <details style="display:inline-block;">
+                                <summary style="
+                                    cursor:pointer;
+                                    color:#245B38;
+                                    font-weight:600;
+                                    background:#E8F5EF;
+                                    border:1px solid #B5D9C8;
+                                    border-radius:10px;
+                                    padding:6px 12px;">
+                                    View source
+                                </summary>
+
+                                <div style="
+                                    margin-top:8px;
+                                    padding:10px 12px;
+                                    background:#FFFFFF;
+                                    border:1px solid #E1EAE2;
+                                    border-radius:10px;">
+                                    <a href="{primary_source['url']}" target="_blank"
+                                       style="color:#245B38;font-weight:600;text-decoration:none;">
+                                        {primary_source['name']}
+                                    </a>
+                                </div>
+                            </details>
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                    
-            # Related questions - suggest different information areas
+                        """
+                    ).strip()
+                )
 
-            fund_name = None
+                st.caption("Knowledge Base Last Updated: 06 Nov 2026")
 
-            if "elss" in query_lower:
-                fund_name = "HDFC ELSS Tax Saver Fund"
-            elif "mid cap" in query_lower:
-                fund_name = "HDFC Mid Cap Fund"
-            elif "large cap" in query_lower:
-                fund_name = "HDFC Large Cap Fund"
-            elif "flexi cap" in query_lower:
-                fund_name = "HDFC Flexi Cap Fund"
+                with st.container(key="how_answer_panel"):
+                    with st.expander("How we got this answer", expanded=False):
+                        st.markdown(
+                            """
+                            This answer was generated using information
+                            available in the HDFC Mutual Fund knowledge base.
 
-            if fund_name:
-                candidates = [
-                    (
-                        "manager",
-                        f"Who is the fund manager of {fund_name}?",
-                        ["fund manager", "manager"]
-                    ),
-                    (
-                        "risk",
-                        f"What risk level is shown for {fund_name}?",
-                        ["risk", "riskometer"]
-                    ),
-                    (
-                        "objective",
-                        f"What is the investment objective of {fund_name}?",
-                        ["objective", "investment goal"]
-                    )
-                ]
+                            1. Your question was matched against relevant information.
+                            2. Retrieved passages were reranked for relevance.
+                            3. The AI generated an answer grounded in those passages.
+                            """
+                        )
 
-                related_questions = [
-                    question
-                    for topic, question, keywords in candidates
-                ][:3]
+                        if len(sources) > 1:
+                            st.markdown("**Additional supporting sources:**")
+
+                            for source in sources[1:]:
+                                st.markdown(
+                                    f"- [{source['name']}]({source['url']})"
+                                )
+            
+            # Related questions
+            selected_fund = st.session_state.get("selected_fund")
+
+            if selected_fund and selected_fund in FUND_OPTIONS:
+                related_questions = FUND_OPTIONS[selected_fund]["related_questions"]
 
             else:
-                related_questions = [
-                    "What is the role of HDFC Asset Management Company?",
-                    "What key information is available about HDFC Mutual Fund?"
-                ]
+                fund_name = None
 
-            st.markdown("#### 🔎 Related questions")
+                if "elss" in query_lower:
+                    fund_name = "HDFC ELSS Tax Saver Fund"
+                elif "mid cap" in query_lower:
+                    fund_name = "HDFC Mid Cap Fund"
+                elif "large cap" in query_lower:
+                    fund_name = "HDFC Large Cap Fund"
+                elif "flexi cap" in query_lower:
+                    fund_name = "HDFC Flexi Cap Fund"
 
-            related_cols = st.columns(len(related_questions))
+                if fund_name:
+                    related_questions = [
+                        f"Who is the fund manager of {fund_name}?",
+                        f"What risk level is shown for {fund_name}?",
+                        f"What is the investment objective of {fund_name}?"
+                    ]
+                else:
+                    related_questions = [
+                        "What is the role of HDFC Asset Management Company?",
+                        "What key information is available about HDFC Mutual Fund?"
+                    ]
 
-            for i, related_q in enumerate(related_questions):
-                with related_cols[i]:
-                    st.button(
-                        related_q, 
-                        key=f"related_{i}", 
-                        use_container_width=True,
-                        on_click=queue_related_question,
-                        args=(related_q,)
-                    )
+            with st.container(border=True, key="related_questions_panel"):
+
+                st.markdown(
+                    '<p style="color:#00543C;font-size:1.15rem;font-weight:700;">'
+                    '<span style="color:#00543C;">✦</span> Related Questions'
+                    '</p>',
+                    unsafe_allow_html=True
+                )
+
+                related_cols = st.columns(len(related_questions))
+
+                for i, related_q in enumerate(related_questions):
+                    with related_cols[i]:
+                        st.button(
+                            related_q,
+                            key=f"related_{i}",
+                            use_container_width=True,
+                            on_click=queue_related_question,
+                            args=(related_q,)
+                        )
                     
 
             # Show disclaimer
